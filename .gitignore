@@ -1,0 +1,40 @@
+# --- Virtual environment ---
+.venv/
+
+# --- Python caches ---
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+
+# --- Build artifacts ---
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# --- Coverage ---
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Secrets ---
+.env
+
+# --- Pipeline artifacts ---
+runs/
+logs/
+*.log
+*.old
+
+# --- SQLite databases (memory.db, checkpoints.db, studio-*.db, *.db-wal, *.db-shm) ---
+*.db
+*.db-wal
+*.db-shm
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

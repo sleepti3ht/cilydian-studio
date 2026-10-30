@@ -1,0 +1,22 @@
+# CiLydian role -> model mapping.
+# Every role runs on local Ollama or any OpenAI-compatible endpoint.
+[pipeline]
+max_iter = 3
+judge_blocking = false
+hitl = false   # true = pause at spec and escalation points (requires checkpoint-sqlite)
+preflight_llm = false
+
+[roles.spec]
+provider = "ollama"
+model = "qwen2.5-coder:7b"
+temperature = 0.0
+
+[roles.coder]
+provider = "ollama"
+model = "qwen2.5-coder:7b"
+temperature = 0.2
+
+[roles.judge]
+provider = "ollama"
+model = "qwen2.5:14b"
+temperature = 0.0
