@@ -1,9 +1,11 @@
-# --- Virtual environment ---
-.venv/
+# --- Virtual environments ---
+.venv*/
+venv/
+env/
 
 # --- Python caches ---
 __pycache__/
-*.pyc
+*.py[cod]
 .ruff_cache/
 .pytest_cache/
 
@@ -28,7 +30,8 @@ logs/
 *.log
 *.old
 
-# --- SQLite databases (memory.db, checkpoints.db, studio-*.db, *.db-wal, *.db-shm) ---
+# --- SQLite databases ---
+# Covers memory.db, checkpoints.db, studio-*.db, *.db-wal, *.db-shm
 *.db
 *.db-wal
 *.db-shm

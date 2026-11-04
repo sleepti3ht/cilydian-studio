@@ -21,11 +21,11 @@ class StudioApp(App):
     }
     """
 
-    def __init__(self, idea: str, run_id: str | None = None,
-                 config_path: str = "config.toml"):
+    def __init__(
+        self, idea: str, run_id: str | None = None, config_path: str = "config.toml"
+    ):
         super().__init__()
-        self.session = StudioSession(run_id=run_id, idea=idea,
-                                     config_path=config_path)
+        self.session = StudioSession(run_id=run_id, idea=idea, config_path=config_path)
         self.title = f"CiLydian Studio: {idea[:40]}"
         self._session_finished = False
 
@@ -60,6 +60,15 @@ class StudioApp(App):
                 payload = ev["payload"]
                 stage = payload.get("stage", "?").upper()
                 self.rich_log.write(f"[yellow]== {stage} awaits decision ==[/yellow]")
+                if ev.get("resumed"):
+                    self.rich_log.write(
+                        "[cyan]resumed from checkpoint (previous session restored)[/cyan]"
+                    )
+                if stage == "ESCALATION":
+                    self.rich_log.write(
+                        "[yellow]accept = mark pass despite failing gates; "
+                        "code stays broken as-is[/yellow]"
+                    )
 
                 # Show context (spec or verdict)
                 if "spec" in payload:
@@ -76,7 +85,9 @@ class StudioApp(App):
                     )
             elif ev["type"] == "done":
                 self.rich_log.write(f"[green]DONE[/green] {ev['verdict']}")
-                self.rich_log.write("[dim]Session finished. Press Ctrl+C to exit.[/dim]")
+                self.rich_log.write(
+                    "[dim]Session finished. Press Ctrl+C to exit.[/dim]"
+                )
                 self._session_finished = True
             elif ev["type"] == "error":
                 self.rich_log.write(f"[red]ERROR[/red] {ev['message']}")
@@ -103,9 +114,11 @@ class StudioApp(App):
         else:
             self.session.send(msg.value)
         msg.input.value = ""
+
     def on_exit(self) -> None:
         """Called when TUI closes."""
         self.session.stop()
+
 
 def main_entry() -> None:
     """CLI entry point: cilydian-studio [--config PATH] [--run-id ID] "idea" """
@@ -113,13 +126,20 @@ def main_entry() -> None:
         description="Textual TUI for CiLydian human-in-the-loop sessions"
     )
     parser.add_argument("idea", nargs="+", help="one-line task description")
-    parser.add_argument("--config", default="config.toml",
-                        help="path to role/model config (default: config.toml in CWD)")
-    parser.add_argument("--run-id", default=None,
-                        help="artifact dir under runs/ (default: studio-<uuid>)")
+    parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="path to role/model config (default: config.toml in CWD)",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="artifact dir under runs/ (default: studio-<uuid>)",
+    )
     args = parser.parse_args()
-    StudioApp(idea=" ".join(args.idea), config_path=args.config,
-              run_id=args.run_id).run()
+    StudioApp(
+        idea=" ".join(args.idea), config_path=args.config, run_id=args.run_id
+    ).run()
 
 
 if __name__ == "__main__":
