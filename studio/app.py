@@ -71,7 +71,9 @@ class StudioApp(App):
 
             elif ev["type"] == "done":
                 self.rich_log.write(f"[green]DONE[/green] {ev['verdict']}")
-                self.rich_log.write("[dim]Session finished. Press Ctrl+C to exit.[/dim]")
+                self.rich_log.write(
+                    "[dim]Session finished. Press Ctrl+C to exit.[/dim]"
+                )
                 self._session_finished = True
 
             elif ev["type"] == "error":
