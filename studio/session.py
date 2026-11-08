@@ -8,7 +8,6 @@ from typing import Any
 
 import cilydian.pipeline as core
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
 
@@ -22,8 +21,9 @@ class StudioSession:
         self.idea = idea
         self.events: queue.Queue = queue.Queue()
         self.commands: queue.Queue = queue.Queue()
-        self.awaiting_decision = threading.Event()  # true only while graph is paused
+        self.awaiting_decision = threading.Event()
         self._worker: threading.Thread | None = None
+        self._stop_requested = threading.Event()
 
         # Initialize core pipeline
         core.init_from_config(config_path, hitl=True)
@@ -38,46 +38,33 @@ class StudioSession:
         self.graph = core.build_app(checkpointer=self.checkpointer)
         self.thread_config = {"configurable": {"thread_id": self.run_id}}
 
-    def start(self) -> None:
-        """Start fresh or resume from checkpoint (Ctrl+C recovery)."""
-        state = self.graph.get_state(self.thread_config)
-        pending = [i.value for t in state.tasks for i in (t.interrupts or ())]
-        if pending:
-            self._worker = threading.Thread(
-                target=self._resurface, args=(pending[0],), daemon=True
-            )
-        elif state.next or state.values:
-            self._worker = threading.Thread(
-                target=self._run, args=(None, True), daemon=True
-            )
-        else:
-            self._worker = threading.Thread(
-                target=self._run, args=(None, False), daemon=True
-            )
-        self._worker.start()
+    def _log(self, msg: str) -> None:
+        """Write directly to a file, bypassing Textual's stdout capture."""
+        with open("force_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"{msg}\n")
 
-    def _resurface(self, payload: Any) -> None:
-        """Re-surface an interrupt left by a killed process; wait for human again."""
-        self.events.put({"type": "interrupt", "payload": payload, "resumed": True})
-        self.awaiting_decision.set()
-        answer = self.commands.get()
-        self.awaiting_decision.clear()
-        self._run(answer, True)
+    def start(self) -> None:
+        """Start graph execution in worker thread."""
+        self._log("--- START CALLED ---")
+        self._spawn(None)
 
     def _spawn(self, resume: Any) -> None:
         self._worker = threading.Thread(target=self._run, args=(resume,), daemon=True)
         self._worker.start()
 
     def is_alive(self) -> bool:
-        """True if worker thread is currently running."""
         return self._worker is not None and self._worker.is_alive()
 
     def stop(self) -> None:
         """Signal the graph to stop and close the DB connection."""
-        # Note: LangGraph doesn't have a hard kill; we just close the DB.
-        # The daemon thread will die when the TUI process exits.
+        self._log("--- STOP CALLED ---")
+        self._stop_requested.set()
+        self.commands.put(None)  # Unblock get()
         if hasattr(self, "_db_conn"):
-            self._db_conn.close()
+            try:
+                self._db_conn.close()
+            except Exception:
+                pass
 
     def _initial_state(self) -> dict:
         return {
@@ -92,28 +79,47 @@ class StudioSession:
             "prev_code_hash": "",
         }
 
-    def _run(self, resume: Any, continued: bool = False) -> None:
+    def _run(self, resume: Any) -> None:
         """Run graph; catch interrupts, wait for human decision, resume."""
+        self._log(f"--- RUN STARTED, resume={resume} ---")
         try:
             if resume is not None:
                 payload = Command(resume=resume)
-            elif continued:
-                payload = None  # None = continue from last checkpoint, no re-run of done steps
             else:
                 payload = self._initial_state()
+
+            self._log("Calling graph.invoke()...")
             result = self.graph.invoke(payload, config=self.thread_config)
+            self._log("graph.invoke() returned.")
 
             state = self.graph.get_state(self.thread_config)
-            if state.next:  # paused at an interrupt point (LangGraph >=1.0 contract)
+            if state.next:  # paused at an interrupt point
+                self._log("Graph paused at interrupt.")
                 value = {}
                 if state.tasks and state.tasks[0].interrupts:
                     value = state.tasks[0].interrupts[0].value
+
                 self.events.put({"type": "interrupt", "payload": value})
                 self.awaiting_decision.set()
-                answer = self.commands.get()
-                self.awaiting_decision.clear()
-                self._spawn(answer)
+
+                # Wait for command without timing out the user
+                while not self._stop_requested.is_set():
+                    try:
+                        answer = self.commands.get(timeout=0.5)
+                        if answer is None:  # Stop signal
+                            self._log("Received None command (stop). Exiting.")
+                            return
+                        self._log(f"Received command: {answer}")
+                        self.awaiting_decision.clear()
+                        self._spawn(answer)
+                        return
+                    except queue.Empty:
+                        continue
+
+                self._log("Stop requested while waiting. Exiting.")
+                return
             else:
+                self._log("Graph finished.")
                 verdict = (
                     (result or {}).get("verdict", {})
                     if isinstance(result, dict)
@@ -121,16 +127,8 @@ class StudioSession:
                 )
                 self.events.put({"type": "done", "verdict": verdict})
 
-        except GraphInterrupt as gi:  # fallback: subgraph-style propagation
-            intr = getattr(gi, "interrupts", None)
-            value = intr[0].value if intr else (gi.args[0] if gi.args else {})
-            self.events.put({"type": "interrupt", "payload": value})
-            self.awaiting_decision.set()  # FIX: was missing here
-            answer = self.commands.get()
-            self.awaiting_decision.clear()
-            self._spawn(answer)
-
         except Exception as exc:  # noqa: BLE001
+            self._log(f"EXCEPTION in _run: {type(exc).__name__}: {exc}")
             self.events.put(
                 {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
             )
@@ -138,7 +136,7 @@ class StudioSession:
     def send(self, raw: str) -> None:
         """Parse human input and send to graph."""
         if not self.awaiting_decision.is_set():
-            return  # FIX: ignore if graph is not waiting for a decision
+            return
 
         raw = raw.strip()
         if raw.startswith("edit "):

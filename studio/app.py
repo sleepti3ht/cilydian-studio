@@ -42,7 +42,7 @@ class StudioApp(App):
         """Start session and poll events."""
         try:
             self.session.start()
-        except Exception as exc:  # noqa: BLE001 - TUI must not crash if worker fails to start
+        except Exception as exc:  # noqa: BLE001
             self.rich_log.write(f"[red]Failed to start session:[/red] {exc}")
             self._session_finished = True
             return
@@ -60,17 +60,7 @@ class StudioApp(App):
                 payload = ev["payload"]
                 stage = payload.get("stage", "?").upper()
                 self.rich_log.write(f"[yellow]== {stage} awaits decision ==[/yellow]")
-                if ev.get("resumed"):
-                    self.rich_log.write(
-                        "[cyan]resumed from checkpoint (previous session restored)[/cyan]"
-                    )
-                if stage == "ESCALATION":
-                    self.rich_log.write(
-                        "[yellow]accept = mark pass despite failing gates; "
-                        "code stays broken as-is[/yellow]"
-                    )
 
-                # Show context (spec or verdict)
                 if "spec" in payload:
                     self.rich_log.write(f"[dim]SPEC:[/dim]\n{payload['spec'][:1000]}")
                 if "verdict" in payload:
@@ -78,32 +68,16 @@ class StudioApp(App):
 
                 actions = payload.get("actions", [])
                 self.rich_log.write(f"[cyan]actions: {actions}[/cyan]")
-                if stage == "ESCALATION":
-                    self.rich_log.write(
-                        "[yellow]accept = mark pass despite failing gates; "
-                        "code stays broken as-is[/yellow]"
-                    )
+
             elif ev["type"] == "done":
                 self.rich_log.write(f"[green]DONE[/green] {ev['verdict']}")
-                self.rich_log.write(
-                    "[dim]Session finished. Press Ctrl+C to exit.[/dim]"
-                )
-                self._session_finished = True
-            elif ev["type"] == "error":
-                self.rich_log.write(f"[red]ERROR[/red] {ev['message']}")
-                self.rich_log.write(
-                    "[dim]Session failed. Press Ctrl+C to exit, "
-                    "then rerun with the same --run-id after fixing.[/dim]"
-                )
+                self.rich_log.write("[dim]Session finished. Press Ctrl+C to exit.[/dim]")
                 self._session_finished = True
 
-        # Fallback: worker died without emitting an event
-        if not self._session_finished and not self.session.is_alive():
-            self.rich_log.write(
-                "[red]Worker thread exited unexpectedly.[/red] "
-                "[dim]Press Ctrl+C to exit.[/dim]"
-            )
-            self._session_finished = True
+            elif ev["type"] == "error":
+                self.rich_log.write(f"[red]ERROR:[/red] {ev['message']}")
+                self.rich_log.write("[dim]Session failed. Press Ctrl+C to exit.[/dim]")
+                self._session_finished = True
 
     def on_input_submitted(self, msg: Input.Submitted) -> None:
         self.rich_log.write(f"[blue]> {msg.value}[/blue]")
