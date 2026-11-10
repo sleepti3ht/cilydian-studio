@@ -117,7 +117,7 @@ flowchart LR
     W -->|pause + payload| T
     T -->|show + wait| U
     U -->|decision| H
-    H -->|Command(resume=...)| W
+    H -->|"Command(resume=...)"| W
     G -->|state| C
     C -->|restore| W
 ```
